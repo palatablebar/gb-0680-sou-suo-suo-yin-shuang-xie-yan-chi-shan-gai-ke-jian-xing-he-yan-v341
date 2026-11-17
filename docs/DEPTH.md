@@ -13,6 +13,7 @@
 | M5 延迟闸门 | 查看并运行延迟闸门 | `/api/latency` | `app/modules/m5_latency/rules.py` | `tests/test_m5.py` |
 | M6 双写对账 | 查看并运行双写对账 | `/api/parity` | `app/modules/m6_parity/rules.py` | `tests/test_m6.py` |
 | M7 回补归档 | 查看并运行回补归档 | `/api/backfills` | `app/modules/m7_backfills/rules.py` | `tests/test_m7.py` |
+| M8 多副本发布裁决 | 查看并运行多副本发布裁决 | `/api/release/preview` | `app/modules/m8_release/rules.py` | `tests/test_m8.py` |
 
 ## 陷阱登记
 
@@ -31,6 +32,10 @@
 | TRAP-09 | 超大版本 | JSON精度损失 | 文本序列化 | `app/values.py` | `tests/test_m2.py::test_large_version_precise` |
 | TRAP-13 | 删除后迟到旧写 | 文档复活 | 最大版本墓碑 | `app/modules/m3_versions/rules.py` | `tests/test_m3.py::test_tombstone_beats_late_old_write` |
 | TRAP-23 | 延迟阈值边界 | 多判延迟 | 等于阈值通过 | `app/modules/m5_latency/rules.py` | `tests/test_m5.py::test_threshold_equal_pass` |
+| TRAP-30 | 多数副本已更新即放行 | 同文档两版本/误报下架 | 全副本收敛才放行，否则按原因暂缓 | `app/modules/m8_release/rules.py` | `tests/test_m8.py::test_stale_replica_blocks_publish_and_flags_searchable` |
+| TRAP-31 | 副本回执重试 | 重复计数产生新结论 | 指纹折叠，发布范围摘要不变 | `app/modules/m8_release/rules.py` | `tests/test_m8.py::test_retry_does_not_change_release_scope` |
+| TRAP-32 | 下架漏副本 | 误报下架完成但仍可检索 | 全墓碑才确认，否则保持拦截并标注可检索 | `app/modules/m8_release/rules.py` | `tests/test_m8.py::test_takedown_requires_every_replica_no_majority` |
+| TRAP-33 | 同回执号内容不一致 | 后写覆盖 | 隔离冲突回执 | `app/modules/m8_release/rules.py` | `tests/test_m8.py::test_receipt_id_conflict_quarantined` |
 
 ## 对账规则
 

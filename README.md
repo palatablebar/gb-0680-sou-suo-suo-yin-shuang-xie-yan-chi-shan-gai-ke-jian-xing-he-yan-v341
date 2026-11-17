@@ -20,10 +20,18 @@ docker compose exec -T app pytest -q
 - 5. 延迟闸门：`/latency`，`/api/latency`。
 - 6. 双写对账：`/parity`，`/api/parity`。
 - 7. 回补归档：`/backfills`，`/api/backfills`。
+- 8. 多副本发布裁决：`/release`，`/api/release/preview`、`/api/release/runs`（样例 `sample_data/replicas.csv`）。
 
 ## 核心规则
 
 按源版本重建目标可见状态，删除墓碑拦截迟到旧写入；延迟与缺失分开定责。
+
+多副本发布裁决（M8）按回执流逐文档给出**唯一结论**，不按多数派放行：
+
+- 新内容：全部在役副本收敛到同一最高版本且正文摘要一致才 `PUBLISH_NEW`；任一副本留旧正文（`HOLD_STALE_REPLICA`）、缺回执（`HOLD_MISSING_ACK`）、同版本正文/操作分歧（`HOLD_CONTENT_DIVERGENCE`/`HOLD_OP_DIVERGENCE`）或副本内版本冲突（`HOLD_REPLICA_CONFLICT`）一律暂缓，避免同一文档两个版本。
+- 下架：全部副本确认最高版本墓碑才 `TAKEDOWN_CONFIRMED`；任一副本未确认即 `HOLD_TAKEDOWN_INCOMPLETE`，显式标注文档仍可检索，禁止误报下架完成。
+- 回执重试：同副本同事件同内容的重复回执幂等折叠，只增加 `retry_count`，不新增结论、不改变发布范围（范围由 `release_scope_sha256` 固化）。
+- 每文档输出一条结论并附逐副本状态、源行号与裁决依据；`GET /api/release/runs/<id>/archive` 导出唯一证据 CSV（结论/隔离/发布范围/范围摘要同一证据链）。复核走乐观锁，陈旧版本返回 409。
 
 ## 演示
 

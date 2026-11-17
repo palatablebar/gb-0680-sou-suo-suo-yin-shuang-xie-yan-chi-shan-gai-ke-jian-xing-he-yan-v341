@@ -2,7 +2,10 @@ from flask import Flask,jsonify,request,send_from_directory
 from app.config import ROOT,DATA_DIR,MODULES
 from app.errors import DomainError
 from app import pipeline,store
+from app import release_pipeline,release_store
 from app.web import register_pages
+from app.release_web import register_release_pages
+from app.modules.m8_release.handler import bp as release_bp
 import importlib
 def create_app():
     application=Flask(__name__,template_folder="templates",static_folder="static")
@@ -45,10 +48,40 @@ def create_app():
         from app.archive import build_archive
         run=store.get(run_id)
         return application.response_class(build_archive(run),mimetype="text/csv",headers={"Content-Disposition":'attachment; filename="evidence.csv"'})
+    @application.post("/api/release/runs")
+    def release_runs():
+        payload=request.get_json(silent=True)
+        if not isinstance(payload,dict): raise DomainError("BAD_BODY","请求需要对象")
+        params=payload.get("parameters",{})
+        if not isinstance(params,dict): raise DomainError("BAD_PARAMETERS","参数需要对象")
+        raw=payload.get("csv")
+        if raw is not None and not isinstance(raw,str): raise DomainError("BAD_CSV","CSV需要文本")
+        return release_pipeline.execute(raw.encode() if raw is not None else release_pipeline.load_sample(payload.get("sample","replicas.csv")),params)
+    @application.post("/api/release/upload")
+    def release_upload():
+        file=request.files.get("file")
+        if not file: raise DomainError("NO_FILE","请选择CSV文件")
+        return release_pipeline.execute(file.read())
+    @application.get("/api/release/runs")
+    def release_history(): return {"runs":release_store.history()}
+    @application.get("/api/release/runs/<run_id>")
+    def release_detail(run_id): return release_store.get(run_id)
+    @application.post("/api/release/runs/<run_id>/review")
+    def release_review(run_id):
+        p=request.get_json(silent=True) or {}
+        if not isinstance(p.get("version"),int): raise DomainError("BAD_VERSION","请提供版本号")
+        return release_store.review(run_id,p["version"],p.get("decision"))
+    @application.get("/api/release/runs/<run_id>/archive")
+    def release_archive(run_id):
+        from app.release_archive import build_release_archive
+        run=release_store.get(run_id)
+        return application.response_class(build_release_archive(run),mimetype="text/csv",headers={"Content-Disposition":'attachment; filename="release-evidence.csv"'})
+    application.register_blueprint(release_bp)
     for index,(slug,title) in enumerate(MODULES,1):
         module=importlib.import_module(f"app.modules.m{index}_{slug}.handler")
         application.register_blueprint(module.bp)
     register_pages(application)
+    register_release_pages(application)
     return application
 app=create_app()
 if __name__=="__main__": app.run(host="0.0.0.0",port=8000,threaded=True)

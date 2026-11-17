@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>多副本发布裁决 · {{title}}</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/layout.css">
+<link rel="stylesheet" href="/static/components.css">
+</head>
+<body>
+<div class="app">
+  <aside class="rail">
+    <div class="brand"><span class="status-dot"></span>INDEX / 镜核</div>
+    <nav>
+      <a href="/latency"><span>返回 7 阶段核验</span><span>1-7</span></a>
+      <a href="/release" class="active"><span>多副本发布裁决</span><span>8</span></a>
+    </nav>
+    <small>RUN {{run.run_id}}<br>RULE {{run.manifest.rule_version}}<br>INPUT {{run.manifest.input_sha256[:12]}}</small>
+  </aside>
+  <div class="work">
+    <header class="topbar">
+      <h1>多副本发布裁决（唯一结论页）</h1>
+      <span class="status-dot"></span><span>{{run.decision}}</span>
+      <button id="signoff">复核</button>
+      <a class="btn" href="/api/release/runs/{{run.run_id}}/archive">证据导出</a>
+    </header>
+    <main class="content">
+      <div class="kpis">
+        <div class="kpi">裁决文档<b>{{run.metrics.documents}}</b></div>
+        <div class="kpi">放行新内容<b>{{run.metrics.publish_new}}</b></div>
+        <div class="kpi">下架确认<b>{{run.metrics.takedown_confirmed}}</b></div>
+        <div class="kpi">暂缓/拦截<b>{{run.metrics.holds}}</b></div>
+        <div class="kpi">折叠重试<b>{{run.metrics.retry_receipts}}</b></div>
+        <div class="kpi">隔离回执<b>{{run.metrics.quarantine_rows}}</b></div>
+      </div>
+
+      <section class="panel">
+        <div class="panel__body command-strip">
+          <select id="stream-preset" aria-label="回执样例">
+            <option value="replicas.csv">多副本回执·迟到与重试批</option>
+          </select>
+          <button class="primary" id="replay">回放</button>
+          <input id="receipt-file" type="file" accept=".csv" aria-label="回执文件">
+          <button id="load-stream">载入</button>
+          <span id="run-error" role="status"></span>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel__head">
+          <h2>逐文档发布裁决（每文档唯一结论）</h2>
+          <input id="doc-filter" placeholder="文档号 / 结论码" aria-label="筛选文档">
+        </div>
+        <div class="table-scroll">
+          <table class="version-ledger">
+            <thead>
+              <tr>
+                <th>源行</th><th>文档号</th><th>结论</th><th>结论码</th>
+                <th>目标版本</th><th>源操作</th><th>可发布</th><th>仍可检索</th>
+                <th>缺失副本</th><th>旧版副本</th><th>分歧副本</th><th>重试</th><th>裁决依据</th>
+              </tr>
+            </thead>
+            <tbody id="doc-rows">
+              {% for row in run.rows %}
+              <tr class="{{'mismatch' if not row.publishable else ''}}">
+                <td>{{row._sources|join(',')}}</td>
+                <td><b>{{row.doc_id}}</b></td>
+                <td>{{row.verdict}}</td>
+                <td>{{row.verdict_code}}</td>
+                <td>{{row.target_version or '—'}}</td>
+                <td>{{row.intended_op or '—'}}</td>
+                <td>{{'是' if row.publishable else '否'}}</td>
+                <td>{{'是' if row.still_searchable else ('否' if row.still_searchable is sameas false else '未知')}}</td>
+                <td>{{row.missing_replicas|join(',') or '—'}}</td>
+                <td>{{row.stale_replicas|join(',') or '—'}}</td>
+                <td>{{row.divergent_replicas|join(',') or '—'}}</td>
+                <td>{{row.retry_count}}</td>
+                <td title="{{row.decision_reason}}">{{row.decision_reason}}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel__head"><h2>副本级证据（新内容 / 下架 / 副本差异同一证据链）</h2></div>
+        <div class="table-scroll">
+          <table class="version-ledger">
+            <thead><tr><th>文档号</th><th>副本</th><th>副本状态</th><th>版本</th><th>操作</th><th>正文摘要</th><th>回执号</th><th>回执时刻</th></tr></thead>
+            <tbody>
+              {% for row in run.rows %}{% for st in row.replica_states %}
+              <tr>
+                <td>{{row.doc_id}}</td><td>{{st.replica_id}}</td><td>{{st.state}}</td>
+                <td>{{st.version or '—'}}</td><td>{{st.op or '—'}}</td>
+                <td>{{st.body_digest or '—'}}</td><td>{{st.receipt_id or '—'}}</td>
+                <td>{{st.received_at or '—'}}</td>
+              </tr>
+              {% endfor %}{% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <div class="grid">
+        <section class="panel">
+          <div class="panel__head"><h2>发布范围（本次唯一对外范围）</h2><span>SHA256 {{run.metrics.release_scope_sha256[:16]}}…</span></div>
+          <div class="panel__body">
+            {% for item in run.release_scope %}
+            <div class="qrow"><b>{{item.doc_id}}</b> · v{{item.target_version}} · {{item.intended_op}} · {{item.body_digest}}</div>
+            {% else %}<div class="empty">本次无放行文档。</div>{% endfor %}
+            <div class="qrow">共 {{run.metrics.release_scope_count}} 篇；重试回执不改变该范围。</div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel__head"><h2>隔离回执</h2><span>{{run.quarantine|length}} 行</span></div>
+          <div class="panel__body">
+            {% for q in run.quarantine %}
+            <div class="qrow">{{q.get('_line','—')}} / <b>{{q.reason}}</b> / {{q.detail}}</div>
+            {% else %}<div class="empty">无隔离回执。</div>{% endfor %}
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel__head"><h2>批次统计</h2><span>规则 {{run.manifest.rule_version}}</span></div>
+          <div class="panel__body">
+            {% for key,value in run.metrics.items() %}
+            <div class="metric"><span>{{metric_labels.get(key,key)}}</span><b>{{value}}</b></div>
+            {% endfor %}
+          </div>
+        </section>
+      </div>
+    </main>
+    <footer class="statusbar">
+      <span>{{run.run_id}} · V{{run.version}} · UTC</span>
+      <span>全副本收敛放行 · 不全则暂缓 · {{run.manifest.generated_at[:19]}}</span>
+    </footer>
+  </div>
+</div>
+<script>window.releaseBatch={{ {'id':run.run_id,'version':run.version}|tojson }};</script>
+<script src="/static/release-console.js"></script>
+</body>
+</html>
